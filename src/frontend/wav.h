@@ -44,14 +44,14 @@ struct WavHeader {
 
   WavHeader() {}
 
-  WavHeader(int num_samples, int num_channel, int sample_rate,
+  WavHeader(int num_samples, int num_channels, int sample_rate,
             int bits_per_sample) {
-    data_size = num_samples * num_channel * (bits_per_sample / 8);
+    data_size = num_samples * num_channels * (bits_per_sample / 8);
     size = sizeof(WavHeader) - 8 + data_size;
-    channels = num_channel;
+    channels = num_channels;
     this->sample_rate = sample_rate;
-    bytes_per_second = sample_rate * num_channel * (bits_per_sample / 8);
-    block_size = num_channel * (bits_per_sample / 8);
+    bytes_per_second = sample_rate * num_channels * (bits_per_sample / 8);
+    block_size = num_channels * (bits_per_sample / 8);
     bit = bits_per_sample;
   }
 };
@@ -92,12 +92,12 @@ class WavReader {
       fread(header.data, 8, sizeof(char), fp);
     }
 
-    num_channel_ = header.channels;
+    num_channels_ = header.channels;
     sample_rate_ = header.sample_rate;
     bits_per_sample_ = header.bit;
     int num_data = header.data_size / (bits_per_sample_ / 8);
     data_ = new float[num_data];
-    num_samples_ = num_data / num_channel_;
+    num_samples_ = num_data / num_channels_;
 
     for (int i = 0; i < num_data; ++i) {
       switch (bits_per_sample_) {
@@ -128,7 +128,7 @@ class WavReader {
     return true;
   }
 
-  int num_channel() const { return num_channel_; }
+  int num_channels() const { return num_channels_; }
   int sample_rate() const { return sample_rate_; }
   int bits_per_sample() const { return bits_per_sample_; }
   int num_samples() const { return num_samples_; }
@@ -138,7 +138,7 @@ class WavReader {
   const float* data() const { return data_; }
 
  private:
-  int num_channel_;
+  int num_channels_;
   int sample_rate_;
   int bits_per_sample_;
   int num_samples_;  // sample points per channel
@@ -147,35 +147,35 @@ class WavReader {
 
 class WavWriter {
  public:
-  WavWriter(const float* data, int num_samples, int num_channel,
+  WavWriter(const float* data, int num_samples, int num_channels,
             int sample_rate, int bits_per_sample)
       : data_(data),
         num_samples_(num_samples),
-        num_channel_(num_channel),
+        num_channels_(num_channels),
         sample_rate_(sample_rate),
         bits_per_sample_(bits_per_sample) {}
 
   void Write(const std::string& filename) {
-    FILE* fp = fopen(filename.c_str(), "w");
-    WavHeader header(num_samples_, num_channel_, sample_rate_,
+    FILE* fp = fopen(filename.c_str(), "wb");
+    WavHeader header(num_samples_, num_channels_, sample_rate_,
                      bits_per_sample_);
     fwrite(&header, 1, sizeof(header), fp);
 
     for (int i = 0; i < num_samples_; ++i) {
-      for (int j = 0; j < num_channel_; ++j) {
+      for (int j = 0; j < num_channels_; ++j) {
         switch (bits_per_sample_) {
           case 8: {
-            char sample = static_cast<char>(data_[i * num_channel_ + j]);
+            char sample = static_cast<char>(data_[i * num_channels_ + j]);
             fwrite(&sample, 1, sizeof(sample), fp);
             break;
           }
           case 16: {
-            int16_t sample = static_cast<int16_t>(data_[i * num_channel_ + j]);
+            int16_t sample = static_cast<int16_t>(data_[i * num_channels_ + j]);
             fwrite(&sample, 1, sizeof(sample), fp);
             break;
           }
           case 32: {
-            int sample = static_cast<int>(data_[i * num_channel_ + j]);
+            int sample = static_cast<int>(data_[i * num_channels_ + j]);
             fwrite(&sample, 1, sizeof(sample), fp);
             break;
           }
@@ -188,22 +188,22 @@ class WavWriter {
  private:
   const float* data_;
   int num_samples_;  // total float points in data_
-  int num_channel_;
+  int num_channels_;
   int sample_rate_;
   int bits_per_sample_;
 };
 
 class StreamWavWriter {
  public:
-  StreamWavWriter(int num_channel, int sample_rate, int bits_per_sample)
-      : num_channel_(num_channel),
+  StreamWavWriter(int num_channels, int sample_rate, int bits_per_sample)
+      : num_channels_(num_channels),
         sample_rate_(sample_rate),
         bits_per_sample_(bits_per_sample),
         total_num_samples_(0) {}
 
-  StreamWavWriter(const std::string& filename, int num_channel, int sample_rate,
-                  int bits_per_sample)
-      : StreamWavWriter(num_channel, sample_rate, bits_per_sample) {
+  StreamWavWriter(const std::string& filename, int num_channels,
+                  int sample_rate, int bits_per_sample)
+      : StreamWavWriter(num_channels, sample_rate, bits_per_sample) {
     Open(filename);
   }
 
@@ -218,7 +218,7 @@ class StreamWavWriter {
   }
 
   void Close() {
-    WavHeader header(total_num_samples_, num_channel_, sample_rate_,
+    WavHeader header(total_num_samples_, num_channels_, sample_rate_,
                      bits_per_sample_);
     fseek(fp_, 0L, SEEK_SET);
     fwrite(&header, 1, sizeof(header), fp_);
@@ -227,7 +227,7 @@ class StreamWavWriter {
 
  private:
   FILE* fp_;
-  int num_channel_;
+  int num_channels_;
   int sample_rate_;
   int bits_per_sample_;
   size_t total_num_samples_;

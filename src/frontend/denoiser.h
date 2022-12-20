@@ -12,29 +12,25 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef DIARIZATION_ONNX_MODEL_H_
-#define DIARIZATION_ONNX_MODEL_H_
+#ifndef FRONTEND_DENOISER_H_
+#define FRONTEND_DENOISER_H_
 
-#include <string>
+#include <memory>
 #include <vector>
 
-#include "onnxruntime_cxx_api.h"  // NOLINT
+#include "glog/logging.h"
+#include "rnnoise/rnnoise.h"
 
-class OnnxModel {
+#define FRAME_SIZE 480  // According to rnnoise/src/denoise.c
+
+class Denoiser {
  public:
-  static void InitEngineThreads(int num_threads = 1);
-  OnnxModel(const std::string& model_path);
+  explicit Denoiser() { st_.reset(rnnoise_create()); };
 
- protected:
-  static Ort::Env env_;
-  static Ort::SessionOptions session_options_;
+  void Denoise(const std::vector<float>& in_wav, std::vector<float>* out_wav);
 
-  std::shared_ptr<Ort::Session> session_ = nullptr;
-  Ort::MemoryInfo memory_info_ =
-      Ort::MemoryInfo::CreateCpu(OrtArenaAllocator, OrtMemTypeCPU);
-
-  std::vector<const char*> input_node_names_;
-  std::vector<const char*> output_node_names_;
+ private:
+  std::shared_ptr<DenoiseState> st_;
 };
 
-#endif  // DIARIZATION_ONNX_MODEL_H_
+#endif  // FRONTEND_DENOISER_H_

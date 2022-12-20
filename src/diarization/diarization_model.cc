@@ -16,8 +16,9 @@
 
 #include "glog/logging.h"
 
-DiarizationModel::DiarizationModel(const std::string& model_path)
-    : OnnxModel(model_path) {
+DiarizationModel::DiarizationModel(const std::string& model_path,
+                                   float threshold, float max_dur)
+    : OnnxModel(model_path), threshold_(threshold), max_dur_(max_dur) {
   //   num_speakers_
   Ort::TypeInfo type_info = session_->GetOutputTypeInfo(0);
   auto tensor_info = type_info.GetTensorTypeAndShapeInfo();
@@ -47,4 +48,53 @@ void DiarizationModel::Forward(const std::vector<float>& audio,
   auto outputs_shape = ort_outputs[0].GetTensorTypeAndShapeInfo().GetShape();
   int len = outputs_shape[1];
   posterior->assign(outputs, outputs + (batch_size * len * num_speakers_));
+}
+
+float DiarizationModel::Diarization(const std::vector<float>& in_wav,
+                                    std::vector<std::vector<float>>* start_pos,
+                                    std::vector<std::vector<float>>* stop_pos) {
+  std::vector<float> posterior;
+  Forward(in_wav, &posterior);
+
+  start_pos->resize(num_speakers_);
+  stop_pos->resize(num_speakers_);
+  int len = posterior.size() / num_speakers_;
+
+  float cur_pos = 0;
+  for (int i = 0; i < len; i++) {
+    // Conv1d & MaxPool1d & SincNet:
+    //   * https://pytorch.org/docs/stable/generated/torch.nn.Conv1d.html
+    //   * https://pytorch.org/docs/stable/generated/torch.nn.MaxPool1d.html
+    //   * https://github.com/pyannote/pyannote-audio/blob/develop/pyannote/audio/models/blocks/sincnet.py#L50-L71
+    //            kernel_size  stride
+    // FBank              251      10
+    // MaxPool1d            3       3
+    // Conv1d               5       1
+    // MaxPool1d            3       3
+    // Conv1d               5       1
+    // MaxPool1d            3       3
+    // (L_{in} - 721) / 270 = L_{out}
+    cur_pos = round(1.0 * ((i * 270) + 721) / SAMPLE_RATE * 1000) / 1000.0;
+    for (int j = 0; j < num_speakers_; j++) {
+      float p = posterior[i * num_speakers_ + j];
+      std::vector<float>& start = start_pos->at(j);
+      std::vector<float>& stop = stop_pos->at(j);
+
+      if (p > threshold_) {
+        if (start.size() - stop.size() != 1) {
+          start.emplace_back(cur_pos);
+        }
+      } else {
+        if (start.size() - stop.size() == 1) {
+          float break_pos = round((start.back() + max_dur_) * 1000) / 1000.0;
+          if (cur_pos > break_pos) {
+            stop.emplace_back(break_pos);
+            start.emplace_back(break_pos);
+          }
+          stop.emplace_back(cur_pos);
+        }
+      }
+    }
+  }
+  return cur_pos;
 }

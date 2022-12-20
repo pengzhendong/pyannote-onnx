@@ -45,7 +45,6 @@ OnnxModel::OnnxModel(const std::string& model_path) {
 #else
   session_ = std::make_shared<Ort::Session>(env_, model_path.c_str(),
                                             session_options_);
-  return session;
 #endif
   Ort::AllocatorWithDefaultOptions allocator;
   // Input info

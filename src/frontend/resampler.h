@@ -12,29 +12,28 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef DIARIZATION_ONNX_MODEL_H_
-#define DIARIZATION_ONNX_MODEL_H_
+#ifndef FRONTEND_RESAMPLER_H_
+#define FRONTEND_RESAMPLER_H_
 
-#include <string>
+#include <memory>
 #include <vector>
 
-#include "onnxruntime_cxx_api.h"  // NOLINT
+#include "glog/logging.h"
+#include "samplerate.h"
 
-class OnnxModel {
+class Resampler {
  public:
-  static void InitEngineThreads(int num_threads = 1);
-  OnnxModel(const std::string& model_path);
+  explicit Resampler(int converter = SRC_SINC_BEST_QUALITY)
+      : converter_(converter) {
+    src_data_ = std::make_shared<SRC_DATA>();
+  }
 
- protected:
-  static Ort::Env env_;
-  static Ort::SessionOptions session_options_;
+  void Resample(int in_sr, const std::vector<float>& in_wav, int out_sr,
+                std::vector<float>* out_wav);
 
-  std::shared_ptr<Ort::Session> session_ = nullptr;
-  Ort::MemoryInfo memory_info_ =
-      Ort::MemoryInfo::CreateCpu(OrtArenaAllocator, OrtMemTypeCPU);
-
-  std::vector<const char*> input_node_names_;
-  std::vector<const char*> output_node_names_;
+ private:
+  int converter_;
+  std::shared_ptr<SRC_DATA> src_data_;
 };
 
-#endif  // DIARIZATION_ONNX_MODEL_H_
+#endif  // FRONTEND_RESAMPLER_H_

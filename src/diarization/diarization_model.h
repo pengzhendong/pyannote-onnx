@@ -17,15 +17,24 @@
 
 #include "diarization/onnx_model.h"
 
+#define SAMPLE_RATE 16000
+
 class DiarizationModel : public OnnxModel {
  public:
-  DiarizationModel(const std::string& model_path);
+  DiarizationModel(const std::string& model_path, float threshold,
+                   float max_dur);
 
   int num_speakers() { return num_speakers_; }
 
-  void Forward(const std::vector<float>& data, std::vector<float>* posterior);
+  float Diarization(const std::vector<float>& in_wav,
+                    std::vector<std::vector<float>>* start_pos,
+                    std::vector<std::vector<float>>* stop_pos);
 
  private:
+  void Forward(const std::vector<float>& in_wav, std::vector<float>* posterior);
+
+  float max_dur_;
+  float threshold_;
   int num_speakers_;
 };
 
