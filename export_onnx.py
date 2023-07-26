@@ -15,10 +15,9 @@
 import argparse
 
 import torch
-import numpy as np
 import onnxruntime as ort
-
 from pyannote.audio import Model
+
 
 def get_args():
     parser = argparse.ArgumentParser(description='export onnx model')
@@ -35,15 +34,22 @@ def main():
     print(model.summarize())
 
     dummy_input = torch.zeros(3, 1, 32000)
-    torch.onnx.export(
-        model,
-        dummy_input,
-        args.onnx_model,
-        do_constant_folding=True,
-        input_names=['input'],
-        output_names=['output'],
-        dynamic_axes={'input': {0: 'B', 1: 'C', 2: 'T'}, 'output': {0: 'B'}}
-    )
+    torch.onnx.export(model,
+                      dummy_input,
+                      args.onnx_model,
+                      do_constant_folding=True,
+                      input_names=['input'],
+                      output_names=['output'],
+                      dynamic_axes={
+                          'input': {
+                              0: 'B',
+                              1: 'C',
+                              2: 'T'
+                          },
+                          'output': {
+                              0: 'B'
+                          }
+                      })
     so = ort.SessionOptions()
     so.optimized_model_filepath = args.onnx_model
     # so.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_ALL

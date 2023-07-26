@@ -1,0 +1,3 @@
+onnxruntime
+pyannote.audio
+torch
