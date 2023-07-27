@@ -19,19 +19,14 @@ import onnxruntime as ort
 from pyannote.audio import Model
 
 
-def get_args():
+def main():
     parser = argparse.ArgumentParser(description='export onnx model')
     parser.add_argument('--checkpoint', required=True, help='checkpoint')
     parser.add_argument('--onnx_model', required=True, help='onnx model')
     args = parser.parse_args()
-    return args
-
-
-def main():
-    args = get_args()
 
     model = Model.from_pretrained(args.checkpoint)
-    print(model.summarize())
+    print(model)
 
     dummy_input = torch.zeros(3, 1, 32000)
     torch.onnx.export(model,
