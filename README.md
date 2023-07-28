@@ -20,7 +20,7 @@ $ pip install -r requirements.txt
 ``` bash
 $ python export_onnx.py \
     --checkpoint pytorch_model.bin \
-    --onnx_model diarizatoin.onnx
+    --onnx_model diarization.onnx
 ```
 
 3. Run the ONNX model with ONNX Runtime in C++ or Python.
