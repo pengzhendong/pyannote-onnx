@@ -33,7 +33,8 @@ void DiarizationModel::Forward(const std::vector<float>& audio,
   // batch_size * num_channels (1 for mono) * num_samples
   const int64_t batch_size = 1;
   const int64_t num_channels = 1;
-  int64_t input_node_dims[3] = {batch_size, num_channels, audio.size()};
+  int64_t input_node_dims[3] = {batch_size, num_channels,
+                                static_cast<int64_t>(audio.size())};
   Ort::Value input_ort = Ort::Value::CreateTensor<float>(
       memory_info_, const_cast<float*>(audio.data()), audio.size(),
       input_node_dims, 3);

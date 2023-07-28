@@ -35,7 +35,12 @@ $ python diarization_main.py \
 
 ### C++
 
-- [RnNoise](https://github.com/werman/noise-suppression-for-voice)
-- [libsamplerate](https://github.com/libsndfile/libsamplerate)
-
-TODO
+``` bash
+$ cmake -S src -B build -DCMAKE_BUILD_TYPE=Release
+$ cmake --build build
+$ mkdir output
+$ ./build/diarization_main \
+    --model_path data/diarization.onnx \
+    --wav_path data/test_16k.wav \
+    --output_dir output
+```

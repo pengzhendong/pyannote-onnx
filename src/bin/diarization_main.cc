@@ -19,7 +19,6 @@
 #include "gflags/gflags.h"
 
 #include "diarization/diarization_model.h"
-#include "frontend/denoiser.h"
 #include "frontend/resampler.h"
 #include "frontend/wav.h"
 
@@ -44,26 +43,16 @@ int main(int argc, char* argv[]) {
   int num_samples = wav_reader.num_samples();
   std::vector<float> input_wav{audio, audio + num_samples};
 
-  std::vector<float> denoised_wav;
   std::vector<float> resampled_wav;
-  auto denoiser = std::make_shared<Denoiser>();
   auto resampler = std::make_shared<Resampler>();
 
   // 0. Upsample to 48k for RnNoise
-  if (sample_rate != 48000) {
-    resampler->Resample(sample_rate, input_wav, 48000, &resampled_wav);
+  if (sample_rate != 16000) {
+    resampler->Resample(sample_rate, input_wav, 16000, &resampled_wav);
     input_wav = resampled_wav;
   }
 
-  // 1. Denoise with RnNoise
-  denoiser->Denoise(input_wav, &denoised_wav);
-  input_wav = denoised_wav;
-
-  // 2. Downsample to 16k for speaker diarization
-  resampler->Resample(48000, input_wav, SAMPLE_RATE, &resampled_wav);
-  input_wav = resampled_wav;
-
-  // 3. Speaker Diarization
+  // 1. Speaker Diarization
   auto diarization = std::make_shared<DiarizationModel>(
       FLAGS_model_path, FLAGS_threshold, FLAGS_max_dur);
 

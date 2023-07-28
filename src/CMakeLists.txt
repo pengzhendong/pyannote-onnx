@@ -25,9 +25,8 @@ include_directories(${CMAKE_CURRENT_SOURCE_DIR})
 
 include(gflags)
 set(WITH_GFLAGS OFF CACHE BOOL "whether build glog with gflags" FORCE)
-include(samplerate)  # Note: must include libsamplerate before glog
+include(samplerate) # Note: must include libsamplerate before glog
 include(glog)
-include(rnnoise)
 include(onnx)
 
 add_subdirectory(frontend)
