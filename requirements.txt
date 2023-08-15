@@ -1,4 +1,5 @@
 https://github.com/pyannote/pyannote-audio/archive/refs/heads/develop.zip
+chardet
 onnx
 onnxruntime
 torch

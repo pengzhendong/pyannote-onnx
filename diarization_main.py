@@ -21,20 +21,36 @@ import soundfile as sf
 
 
 def main():
-    parser = argparse.ArgumentParser(description='speaker diarization')
-    parser.add_argument('--onnx_model', required=True, help='onnx model')
-    parser.add_argument('--wav', required=True, help='wav file')
+    parser = argparse.ArgumentParser(description="speaker diarization")
+    parser.add_argument("--onnx_model", required=True, help="onnx model")
+    parser.add_argument("--wav", required=True, help="wav file")
     args = parser.parse_args()
 
     ort_sess = ort.InferenceSession(args.onnx_model)
-    audio, _ = sf.read(args.wav, dtype='float32')
-    outputs = ort_sess.run(None, {'input': audio[None, None, :]})[0][0]
+    audio, sr = sf.read(args.wav, dtype="float32")
+    outputs = ort_sess.run(None, {"input": audio[None, None, :]})[0][0]
+
+    # Conv1d & MaxPool1d & SincNet:
+    #   * https://pytorch.org/docs/stable/generated/torch.nn.Conv1d.html
+    #   * https://pytorch.org/docs/stable/generated/torch.nn.MaxPool1d.html
+    #   * https://github.com/pyannote/pyannote-audio/blob/develop/pyannote/audio/models/blocks/sincnet.py#L50-L71
+    #            kernel_size  stride
+    # Conv1d             251      10
+    # MaxPool1d            3       3
+    # Conv1d               5       1
+    # MaxPool1d            3       3
+    # Conv1d               5       1
+    # MaxPool1d            3       3
+    # (L_{in} - 721) / 270 = L_{out}
+    x1 = np.arange(0, len(audio)) / sr
+    x2 = [(i * 270 + 721) / sr for i in range(0, len(outputs))]
 
     _, axs = plt.subplots(2)
-    axs[0].plot(audio)
-    axs[1].plot(outputs)
+    axs[0].plot(x1, audio)
+    axs[1].plot(x2, outputs)
+    axs[1].set_xlabel("time (s)")
     plt.show()
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()

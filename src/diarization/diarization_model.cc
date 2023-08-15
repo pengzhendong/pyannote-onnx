@@ -68,7 +68,7 @@ float DiarizationModel::Diarization(const std::vector<float>& in_wav,
     //   * https://pytorch.org/docs/stable/generated/torch.nn.MaxPool1d.html
     //   * https://github.com/pyannote/pyannote-audio/blob/develop/pyannote/audio/models/blocks/sincnet.py#L50-L71
     //            kernel_size  stride
-    // FBank              251      10
+    // Conv1d             251      10
     // MaxPool1d            3       3
     // Conv1d               5       1
     // MaxPool1d            3       3
