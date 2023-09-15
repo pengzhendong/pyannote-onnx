@@ -1,5 +1,8 @@
 https://github.com/pyannote/pyannote-audio/archive/refs/heads/develop.zip
 chardet
+librosa
+matplotlib
+numpy
 onnx
 onnxruntime
 torch

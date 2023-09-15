@@ -16,31 +16,30 @@ $ pip install -r requirements.txt
 
 1. Download the [pretrained model](https://huggingface.co/pyannote/segmentation/resolve/main/pytorch_model.bin) from Hugging Face [pyannote/segmentation](https://huggingface.co/pyannote/segmentation/tree/main).
 2. Export the pretrained model to ONNX model.
+3. Run the ONNX model with ONNX Runtime in C++ or Python.
 
 ``` bash
 $ python export_onnx.py \
-    --checkpoint pytorch_model.bin \
-    --onnx_model diarization.onnx
+    --checkpoint data/pytorch_model.bin \
+    --onnx_model pyannote.onnx
 ```
 
-3. Run the ONNX model with ONNX Runtime in C++ or Python.
-
-### Python
+### Python Usage
 
 ``` bash
-$ python diarization_main.py \
-    --onnx_model diarization.onnx \
+$ python pyannote_onnx/diarization.py \
+    --onnx_model pyannote.onnx \
     --wav data/test_16k.wav
 ```
 
-### C++
+### C++ Usage
 
 ``` bash
 $ cmake -S src -B build -DCMAKE_BUILD_TYPE=Release
 $ cmake --build build
 $ mkdir output
 $ ./build/diarization_main \
-    --model_path data/diarization.onnx \
+    --model_path pyannote.onnx \
     --wav_path data/test_16k.wav \
     --output_dir output
 ```

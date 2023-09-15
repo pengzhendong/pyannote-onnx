@@ -14,20 +14,25 @@
 
 import argparse
 
+from importlib_resources import files
+import librosa
 import matplotlib.pyplot as plt
 import numpy as np
 import onnxruntime as ort
-import soundfile as sf
 
 
 def main():
     parser = argparse.ArgumentParser(description="speaker diarization")
-    parser.add_argument("--onnx_model", required=True, help="onnx model")
-    parser.add_argument("--wav", required=True, help="wav file")
+    parser.add_argument("--wav", required=True, help="input wav path")
+    parser.add_argument(
+        "--onnx_model",
+        default=files("pyannote_onnx").joinpath("pyannote.onnx"),
+        help="pyannote onnx model path",
+    )
     args = parser.parse_args()
 
     ort_sess = ort.InferenceSession(args.onnx_model)
-    audio, sr = sf.read(args.wav, dtype="float32")
+    audio, sr = librosa.load(args.wav, sr=16000)
     outputs = ort_sess.run(None, {"input": audio[None, None, :]})[0][0]
 
     # Conv1d & MaxPool1d & SincNet:
