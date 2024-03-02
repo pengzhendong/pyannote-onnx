@@ -14,6 +14,8 @@
 
 #include "diarization/diarization_model.h"
 
+#include <cmath>
+
 #include "glog/logging.h"
 
 DiarizationModel::DiarizationModel(const std::string& model_path,
