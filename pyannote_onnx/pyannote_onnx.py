@@ -1,4 +1,4 @@
-# Copyright (c) 2024, Zhendong Peng (pzd17@tsinghua.org.cn)
+# Copyright (c) 2023, Zhendong Peng (pzd17@tsinghua.org.cn)
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -12,4 +12,14 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from .pyannote_onnx import *
+import os
+
+from .inference_session import PickableInferenceSession
+
+
+class PyannoteONNX:
+    def __init__(self, onnx_model=f"{os.path.dirname(__file__)}/pyannote.onnx"):
+        self.session = PickableInferenceSession(onnx_model)
+
+    def run(self, *args):
+        return self.session.run(*args)

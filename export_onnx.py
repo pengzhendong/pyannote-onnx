@@ -12,27 +12,28 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import argparse
-
+import click
 import torch
 import onnxruntime as ort
-from pyannote.audio import Model
+
+try:
+    from pyannote.audio import Model
+except ImportError:
+    print("Please install pyannote: https://github.com/pyannote/pyannote-audio/archive/refs/heads/develop.zip")
 
 
-def main():
-    parser = argparse.ArgumentParser(description="export onnx model")
-    parser.add_argument("--checkpoint", required=True, help="checkpoint")
-    parser.add_argument("--onnx_model", required=True, help="onnx model")
-    args = parser.parse_args()
-
-    model = Model.from_pretrained(args.checkpoint)
+@click.command()
+@click.argument("checkpoint", type=click.Path(exists=True, file_okay=True))
+@click.argument("onnx_model", type=click.Path(exists=False, file_okay=True))
+def main(checkpoint: str, onnx_model: str):
+    model = Model.from_pretrained(checkpoint)
     print(model)
 
     dummy_input = torch.zeros(3, 1, 32000)
     torch.onnx.export(
         model,
         dummy_input,
-        args.onnx_model,
+        onnx_model,
         do_constant_folding=True,
         input_names=["input"],
         output_names=["output"],
@@ -40,11 +41,12 @@ def main():
             "input": {0: "B", 1: "C", 2: "T"},
         },
     )
-    so = ort.SessionOptions()
-    so.optimized_model_filepath = args.onnx_model
+    opts = ort.SessionOptions()
+    opts.log_severity_level = 3
+    opts.optimized_model_filepath = onnx_model
     # so.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_ALL
     # ORT_DISABLE_ALL, ORT_ENABLE_BASIC, ORT_ENABLE_EXTENDED, ORT_ENABLE_ALL
-    ort.InferenceSession(args.onnx_model, sess_options=so)
+    ort.InferenceSession(onnx_model, sess_options=opts)
 
 
 if __name__ == "__main__":

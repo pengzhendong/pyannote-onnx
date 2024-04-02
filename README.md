@@ -8,7 +8,7 @@
 
 > Only Python 3.8+ is supported.
 
-``` bash
+```bash
 $ pip install -r requirements.txt
 ```
 
@@ -18,23 +18,19 @@ $ pip install -r requirements.txt
 2. Export the pretrained model to ONNX model.
 3. Run the ONNX model with ONNX Runtime in C++ or Python.
 
-``` bash
-$ python export_onnx.py \
-    --checkpoint data/pytorch_model.bin \
-    --onnx_model pyannote.onnx
+```bash
+$ python export_onnx.py pytorch_model.bin pyannote.onnx
 ```
 
 ### Python Usage
 
-``` bash
-$ python pyannote_onnx/diarization.py \
-    --onnx_model pyannote.onnx \
-    --wav data/test_16k.wav
+```bash
+$ python main.py data/test_16k.wav
 ```
 
 ### C++ Usage
 
-``` bash
+```bash
 $ cmake -S src -B build -DCMAKE_BUILD_TYPE=Release
 $ cmake --build build
 $ mkdir output

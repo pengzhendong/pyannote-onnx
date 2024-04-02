@@ -12,28 +12,21 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import argparse
+import click
 
-from importlib_resources import files
 import librosa
 import matplotlib.pyplot as plt
 import numpy as np
-import onnxruntime as ort
+
+from pyannote_onnx import PyannoteONNX
 
 
-def main():
-    parser = argparse.ArgumentParser(description="speaker diarization")
-    parser.add_argument("--wav", required=True, help="input wav path")
-    parser.add_argument(
-        "--onnx_model",
-        default=files("pyannote_onnx").joinpath("pyannote.onnx"),
-        help="pyannote onnx model path",
-    )
-    args = parser.parse_args()
-
-    ort_sess = ort.InferenceSession(args.onnx_model)
-    audio, sr = librosa.load(args.wav, sr=16000)
-    outputs = ort_sess.run(None, {"input": audio[None, None, :]})[0][0]
+@click.command()
+@click.argument("wav_path", type=click.Path(exists=True, file_okay=True))
+def main(wav_path: str):
+    model = PyannoteONNX()
+    audio, sr = librosa.load(wav_path, sr=16000)
+    outputs = model.run(None, {"input": audio[None, None, :]})[0][0]
 
     # Conv1d & MaxPool1d & SincNet:
     #   * https://pytorch.org/docs/stable/generated/torch.nn.Conv1d.html

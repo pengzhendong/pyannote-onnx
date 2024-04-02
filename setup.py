@@ -35,7 +35,7 @@ setup(
     install_requires=["librosa", "matplotlib", "numpy", "onnxruntime"],
     entry_points={
         "console_scripts": [
-            "diarization = pyannote_onnx.diarization:main",
+            "diarization = main:main",
         ]
     },
     classifiers=[
