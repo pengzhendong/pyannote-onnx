@@ -4,13 +4,7 @@
 
 `pyannote-onnx` is used to convert the [pretrained model](https://huggingface.co/pyannote/segmentation) defined in PyTorch into the ONNX format and then run it with [ONNX Runtime](https://github.com/microsoft/onnxruntime) (in C++ or Python).
 
-## Installation
-
 > Only Python 3.8+ is supported.
-
-```bash
-$ pip install -r requirements.txt
-```
 
 ## Usage
 
@@ -19,12 +13,14 @@ $ pip install -r requirements.txt
 3. Run the ONNX model with ONNX Runtime in C++ or Python.
 
 ```bash
+$ pip install torch onnx https://github.com/pyannote/pyannote-audio/archive/refs/heads/develop.zip
 $ python export_onnx.py pytorch_model.bin pyannote.onnx
 ```
 
 ### Python Usage
 
 ```bash
+$ pip install -r requirements.txt
 $ python main.py data/test_16k.wav
 ```
 

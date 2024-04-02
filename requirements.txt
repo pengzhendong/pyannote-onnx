@@ -1,8 +1,4 @@
-chardet
 click
 librosa
-matplotlib
 numpy
-onnx
 onnxruntime
-torch
