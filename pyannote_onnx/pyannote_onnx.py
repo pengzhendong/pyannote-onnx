@@ -260,3 +260,29 @@ class PyannoteONNX:
                 speech_dict["end"] = round(speech_dict["end"] / sr, 3)
 
         return speeches
+
+    def get_num_speakers(
+        self,
+        wav_path: Union[str, Path],
+        threshold: float = 0.5,
+        min_speech_duration_ms: float = 100,
+    ):
+        wav_path = Path(wav_path)
+        wav, sr = librosa.load(wav_path, sr=16000)
+        if len(wav.shape) > 1:
+            raise ValueError(
+                "More than one dimension in audio."
+                "Are you trying to process audio with 2 channels?"
+            )
+        if sr / len(wav) > 31.25:
+            raise ValueError("Input audio is too short.")
+
+        outputs = self(wav)
+        if self.latest_version:
+            speech_frames = np.sum(outputs[:, 1:4] > threshold, axis=0)
+        else:
+            speech_frames = np.sum(outputs > threshold, axis=0)
+        speech_duration_ms = speech_frames * 270 * 1000 / sr
+        num_speakers = np.sum(speech_duration_ms > min_speech_duration_ms)
+
+        return num_speakers

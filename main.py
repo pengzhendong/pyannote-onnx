@@ -21,8 +21,18 @@ from pyannote_onnx import PyannoteONNX
 @click.argument("wav_path", type=click.Path(exists=True, file_okay=True))
 def main(wav_path: str):
     vad = PyannoteONNX()
-    segements = vad.get_speech_timestamps(wav_path, return_seconds=True)
+    segements = vad.get_speech_timestamps(
+        wav_path,
+        min_silence_duration_ms=100,
+        speech_pad_ms=30,
+        return_seconds=True,
+    )
     print(segements)
+
+    num_speakers = vad.get_num_speakers(
+        wav_path, threshold=0.5, min_speech_duration_ms=100
+    )
+    print(num_speakers)
 
 
 if __name__ == "__main__":
