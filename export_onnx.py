@@ -29,8 +29,7 @@ def main(checkpoint: str, onnx_model: str):
     model = Model.from_pretrained(checkpoint)
     print(model)
 
-    dummy_input = torch.zeros(3, 1, 32000)
-    # dummy_input = torch.zeros(3, 1, 160000)  # pyannote/segmentation-3.0
+    dummy_input = torch.zeros(3, 1, 160000)
     torch.onnx.export(
         model,
         dummy_input,

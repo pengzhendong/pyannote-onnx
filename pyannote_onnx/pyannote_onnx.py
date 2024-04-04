@@ -24,11 +24,7 @@ from .inference_session import PickableInferenceSession
 
 
 class PyannoteONNX:
-    def __init__(self, latest_version=True):
-        # segmentation classes:
-        #   1. {spk1}
-        #   2. {spk2}
-        #   3. {spk3}
+    def __init__(self):
         # segmentation-3.0 classes:
         #   1. {no speech}
         #   2. {spk1}
@@ -37,28 +33,56 @@ class PyannoteONNX:
         #   5. {spk1, spk2}
         #   6. {spk1, spk3}
         #   7. {spk2, spk3}
-        self.latest_version = latest_version
-        onnx_model = "segmentation-3.0" if latest_version else "segmentation"
-        onnx_model = f"{os.path.dirname(__file__)}/{onnx_model}.onnx"
+        self.sample_rate = 16000
+        self.duration = 10 * self.sample_rate
+        onnx_model = f"{os.path.dirname(__file__)}/segmentation-3.0.onnx"
         self.session = PickableInferenceSession(onnx_model)
 
-    def __call__(self, x):
-        ort_outs = self.session.run(None, {"input": x[None, None, :]})[0][0]
-        if self.latest_version:
+    @staticmethod
+    def sliding_window(waveform, window_size, step_size):
+        windows = []
+        start = 0
+        num_samples = len(waveform)
+        while start <= num_samples - window_size:
+            windows.append((start, start + window_size))
+            yield waveform[start : start + window_size]
+            start += step_size
+        # last incomplete window
+        if num_samples < window_size or (num_samples - window_size) % step_size > 0:
+            last_window = waveform[start:]
+            if len(last_window) < window_size:
+                last_window = np.pad(last_window, (0, window_size - len(last_window)))
+            yield last_window
+
+    @staticmethod
+    def aggregate():
+        # average
+        pass
+
+    def __call__(self, x, step=2.5, return_chunk=False):
+        step = int(step * self.sample_rate)
+        for chunk in self.sliding_window(x, self.duration, step):
+            ort_outs = self.session.run(None, {"input": chunk[None, None, :]})[0][0]
+            ort_outs[np.isnan(ort_outs)] = 0
             ort_outs = np.exp(ort_outs)
-        return ort_outs
+            # TODO: aggregate and crop with loose
+            if return_chunk:
+                yield ort_outs
+            else:
+                for out in ort_outs:
+                    yield out
 
     def get_speech_timestamps(
         self,
         wav_path: Union[str, Path],
+        save_path: Union[str, Path] = None,
+        flat_layout: bool = True,
         threshold: float = 0.5,
         min_speech_duration_ms: int = 250,
         max_speech_duration_s: float = float("inf"),
         min_silence_duration_ms: int = 100,
         speech_pad_ms: int = 30,
         return_seconds: bool = False,
-        save_path: Union[str, Path] = None,
-        flat_layout: bool = True,
     ):
         """
         Splitting long audios into speech chunks using Pyannote ONNX
@@ -66,6 +90,10 @@ class PyannoteONNX:
         Parameters
         ----------
         wav_path: wav path
+        save_path: string or Path (default - None)
+            whether the save speech segments
+        flat_layout: bool (default - True)
+            whether use the flat directory structure
         threshold: float (default - 0.5)
             Speech threshold. Pyannote audio outputs speech probabilities for each audio
             chunk, probabilities ABOVE this value are considered as SPEECH. It is
@@ -86,10 +114,6 @@ class PyannoteONNX:
             Final speech chunks are padded by speech_pad_ms each side
         return_seconds: bool (default - False)
             whether return timestamps in seconds (default - samples)
-        save_path: string or Path (default - None)
-            whether the save speech segments
-        flat_layout: bool (default - True)
-            whether use the flat directory structure
 
         Returns
         ----------
@@ -99,12 +123,12 @@ class PyannoteONNX:
         """
         wav_path = Path(wav_path)
         original_sr = librosa.get_samplerate(wav_path)
-        if original_sr != 16000:
+        if original_sr != self.sample_rate:
             step = 1
             wav, sr = librosa.load(wav_path, sr=original_sr)
         else:
-            step = original_sr / 16000
-            wav, sr = librosa.load(wav_path, sr=16000)
+            step = original_sr / self.sample_rate
+            wav, sr = librosa.load(wav_path, sr=self.sample_rate)
         if len(wav.shape) > 1:
             raise ValueError(
                 "More than one dimension in audio."
@@ -135,13 +159,6 @@ class PyannoteONNX:
         min_silence_samples_at_max_speech = sr * 98 / 1000
 
         num_samples = len(wav)
-        outputs = self(wav)
-        if self.latest_version:
-            speech_probs = 1 - outputs[:, 0]
-            # speech_probs = np.sum(outputs[:, 1:4], axis=1)
-        else:
-            speech_probs = np.sum(outputs, axis=1)
-
         speeches = []
         current_speech = {}
         neg_threshold = threshold - 0.15
@@ -151,7 +168,9 @@ class PyannoteONNX:
         # to save potential segment limits in case of maximum segment size reached
         prev_end = 0
         next_start = 0
-        for i, speech_prob in enumerate(speech_probs):
+
+        for i, output in enumerate(self(wav)):
+            speech_prob = 1 - output[0]
             current_samples = window_size_samples * i
             # current frame is speech
             if speech_prob >= threshold:
@@ -258,7 +277,6 @@ class PyannoteONNX:
             if return_seconds:
                 speech_dict["start"] = round(speech_dict["start"] / sr, 3)
                 speech_dict["end"] = round(speech_dict["end"] / sr, 3)
-
         return speeches
 
     def get_num_speakers(
@@ -277,11 +295,8 @@ class PyannoteONNX:
         if sr / len(wav) > 31.25:
             raise ValueError("Input audio is too short.")
 
-        outputs = self(wav)
-        if self.latest_version:
-            speech_frames = np.sum(outputs[:, 1:4] > threshold, axis=0)
-        else:
-            speech_frames = np.sum(outputs > threshold, axis=0)
+        outputs = np.array(list(self(wav)))
+        speech_frames = np.sum(outputs[:, 1:4] > threshold, axis=0)
         speech_duration_ms = speech_frames * 270 * 1000 / sr
         num_speakers = np.sum(speech_duration_ms > min_speech_duration_ms)
 
