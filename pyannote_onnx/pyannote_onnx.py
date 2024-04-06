@@ -13,6 +13,7 @@
 # limitations under the License.
 
 import os
+from functools import partial
 from pathlib import Path
 from typing import Union
 
@@ -86,13 +87,42 @@ class PyannoteONNX:
                 ort_outs = ort_outs[:-overlap, :]
             else:
                 # crop
-                ort_outs = ort_outs[:(window_size - 721) // 270, :]
+                ort_outs = ort_outs[: (window_size - 721) // 270, :]
 
             if return_chunk:
                 yield ort_outs
             else:
                 for out in ort_outs:
                     yield out
+
+    def process_segment(
+        self,
+        idx,
+        segment,
+        wav,
+        sample_rate,
+        save_path,
+        flat_layout,
+        speech_pad_samples,
+        return_seconds,
+    ):
+        step = sample_rate / self.sample_rate
+        if step != 1.0:
+            segment["start"] = int(segment["start"] * step)
+            segment["end"] = int(segment["end"] * step)
+
+        segment["start"] = max(segment["start"] - speech_pad_samples, 0)
+        segment["end"] = min(segment["end"] + speech_pad_samples, len(wav))
+        if save_path:
+            wav = wav[segment["start"] : segment["end"]]
+            if flat_layout:
+                sf.write(str(save_path) + f"_{idx:04d}.wav", wav, sample_rate)
+            else:
+                sf.write(str(Path(save_path) / f"{idx:04d}.wav"), wav, sample_rate)
+        if return_seconds:
+            segment["start"] = round(segment["start"] / sample_rate, 3)
+            segment["end"] = round(segment["end"] / sample_rate, 3)
+        return segment
 
     def get_speech_timestamps(
         self,
@@ -143,14 +173,24 @@ class PyannoteONNX:
             list containing ends and beginnings of speech chunks (samples or seconds
             based on return_seconds)
         """
-        wav_path = Path(wav_path)
-        original_sr = librosa.get_samplerate(wav_path)
-        if original_sr != self.sample_rate:
-            step = 1
-            wav, sr = librosa.load(wav_path, sr=original_sr)
-        else:
-            step = original_sr / self.sample_rate
-            wav, sr = librosa.load(wav_path, sr=self.sample_rate)
+        wav, sr = librosa.load(wav_path, sr=self.sample_rate)
+        speech_pad_samples = sr * speech_pad_ms // 1000
+
+        original_wav = wav
+        sample_rate = librosa.get_samplerate(wav_path)
+        if sample_rate != self.sample_rate:
+            # load the wav with original sample rate for saving
+            original_wav, _ = librosa.load(wav_path, sr=sample_rate)
+        fn = partial(
+            self.process_segment,
+            wav=original_wav,
+            sample_rate=sample_rate,
+            save_path=save_path,
+            flat_layout=flat_layout,
+            speech_pad_samples=speech_pad_samples,
+            return_seconds=return_seconds,
+        )
+
         if len(wav.shape) > 1:
             raise ValueError(
                 "More than one dimension in audio."
@@ -160,16 +200,13 @@ class PyannoteONNX:
             raise ValueError("Input audio is too short.")
 
         window_size_samples = 270
-        min_speech_samples = sr * min_speech_duration_ms / 1000
-        speech_pad_samples = sr * speech_pad_ms / 1000
+        min_speech_samples = sr * min_speech_duration_ms // 1000
         max_speech_samples = (
             sr * max_speech_duration_s - window_size_samples - 2 * speech_pad_samples
         )
-        min_silence_samples = sr * min_silence_duration_ms / 1000
-        min_silence_samples_at_max_speech = sr * 98 / 1000
+        min_silence_samples = sr * min_silence_duration_ms // 1000
+        min_silence_samples_at_max_speech = sr * 98 // 1000
 
-        num_samples = len(wav)
-        speeches = []
         current_speech = {}
         neg_threshold = threshold - 0.15
         triggered = False
@@ -179,9 +216,11 @@ class PyannoteONNX:
         prev_end = 0
         next_start = 0
 
-        for i, output in enumerate(self(wav)):
+        idx = 0
+        current_samples = 721
+        for output in self(wav):
+            current_samples += 270
             speech_prob = 1 - output[0]
-            current_samples = window_size_samples * i
             # current frame is speech
             if speech_prob >= threshold:
                 if temp_end > 0 and next_start < prev_end:
@@ -199,7 +238,8 @@ class PyannoteONNX:
                 # prev_end larger than 0 means there is a short silence in the middle avoid aggressive cutting
                 if prev_end > 0:
                     current_speech["end"] = prev_end
-                    speeches.append(current_speech)
+                    yield fn(idx, current_speech)
+                    idx += 1
                     current_speech = {}
                     # previously reached silence (< neg_thres) and is still not speech (< thres)
                     if next_start < prev_end:
@@ -211,7 +251,8 @@ class PyannoteONNX:
                     temp_end = 0
                 else:
                     current_speech["end"] = current_samples
-                    speeches.append(current_speech)
+                    yield fn(idx, current_speech)
+                    idx += 1
                     current_speech = {}
                     prev_end = 0
                     next_start = 0
@@ -232,62 +273,22 @@ class PyannoteONNX:
                         current_speech["end"] - current_speech["start"]
                         > min_speech_samples
                     ):
-                        speeches.append(current_speech)
+                        yield fn(idx, current_speech)
+                        idx += 1
                     current_speech = {}
                     prev_end = 0
                     next_start = 0
                     temp_end = 0
                     triggered = False
 
+        num_samples = len(wav)
         # deal with the last speech segment
         if (
             current_speech
             and num_samples - current_speech["start"] > min_speech_samples
         ):
             current_speech["end"] = num_samples
-            speeches.append(current_speech)
-
-        # padding each speech segment
-        for i, speech in enumerate(speeches):
-            if i == 0:
-                speech["start"] = int(max(0, speech["start"] - speech_pad_samples))
-            if i != len(speeches) - 1:
-                silence_duration = speeches[i + 1]["start"] - speech["end"]
-                if silence_duration < 2 * speech_pad_samples:
-                    speech["end"] += int(silence_duration // 2)
-                    speeches[i + 1]["start"] = int(
-                        max(0, speeches[i + 1]["start"] - silence_duration // 2)
-                    )
-                else:
-                    speech["end"] = int(
-                        min(num_samples, speech["end"] + speech_pad_samples)
-                    )
-                    speeches[i + 1]["start"] = int(
-                        max(0, speeches[i + 1]["start"] - speech_pad_samples)
-                    )
-            else:
-                speech["end"] = int(
-                    min(num_samples, speech["end"] + speech_pad_samples)
-                )
-
-        if step != 1.0:
-            # reload without resampling
-            wav, sr = librosa.load(wav_path, sr=original_sr)
-        for idx, speech_dict in enumerate(speeches):
-            if step != 1.0:
-                speech_dict["start"] = int(speech_dict["start"] * step)
-                speech_dict["end"] = int(speech_dict["end"] * step)
-            if save_path:
-                save_path = Path(save_path)
-                segment = wav[speech_dict["start"] : speech_dict["end"]]
-                if flat_layout:
-                    sf.write(str(save_path) + f"_{idx:04d}.wav", segment, sr)
-                else:
-                    sf.write(str(save_path / f"{idx:04d}.wav"), segment, sr)
-            if return_seconds:
-                speech_dict["start"] = round(speech_dict["start"] / sr, 3)
-                speech_dict["end"] = round(speech_dict["end"] / sr, 3)
-        return speeches
+            yield fn(idx, current_speech)
 
     def get_num_speakers(
         self,
@@ -295,8 +296,11 @@ class PyannoteONNX:
         threshold: float = 0.5,
         min_speech_duration_ms: float = 100,
     ):
-        wav_path = Path(wav_path)
-        wav, sr = librosa.load(wav_path, sr=16000)
+        """
+        Get the max number of speakers of each sliding windows (10 seconds)
+        It may not work if there are two or three speakers in different windows
+        """
+        wav, sr = librosa.load(wav_path, sr=self.sample_rate)
         if len(wav.shape) > 1:
             raise ValueError(
                 "More than one dimension in audio."
@@ -307,7 +311,6 @@ class PyannoteONNX:
 
         outputs = np.array(list(self(wav)))
         speech_frames = np.sum(outputs[:, 1:4] > threshold, axis=0)
-        speech_duration_ms = speech_frames * 270 * 1000 / sr
+        speech_duration_ms = (speech_frames * 270 + 721) * 1000 / sr
         num_speakers = np.sum(speech_duration_ms > min_speech_duration_ms)
-
         return num_speakers

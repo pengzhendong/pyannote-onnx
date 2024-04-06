@@ -27,7 +27,7 @@ def main(wav_path: str):
         speech_pad_ms=30,
         return_seconds=True,
     )
-    print(segements)
+    print(list(segements))
 
     num_speakers = vad.get_num_speakers(
         wav_path, threshold=0.5, min_speech_duration_ms=100

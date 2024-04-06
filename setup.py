@@ -19,9 +19,12 @@ from setuptools import setup, find_packages
 with open("README.md", encoding="utf8") as fin:
     long_description = fin.read()
 
+with open("requirements.txt", encoding="utf-8") as f:
+    requirements = f.readlines()
+
 setup(
     name="pyannote-onnx",
-    version=os.getenv("BUILD_VERSION") or "0.0.1",
+    version=os.getenv("BUILD_VERSION") or "0.0.2",
     author="Zhendong Peng",
     author_email="pzd17@tsinghua.org.cn",
     long_description=long_description,
@@ -29,10 +32,8 @@ setup(
     description="Pyannote ONNX",
     url="https://github.com/pengzhendong/pyannote-onnx",
     packages=find_packages(),
-    package_data={
-        "pyannote_onnx": ["*.onnx"],
-    },
-    install_requires=["librosa", "matplotlib", "numpy", "onnxruntime"],
+    include_package_data=True,
+    install_requires=requirements,
     entry_points={
         "console_scripts": [
             "diarization = main:main",
