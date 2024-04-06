@@ -15,23 +15,7 @@
 ```bash
 $ pip install torch onnx https://github.com/pyannote/pyannote-audio/archive/refs/heads/develop.zip
 $ python export_onnx.py pytorch_model.bin segmentation-3.0.onnx
-```
 
-### Python Usage
-
-```bash
 $ pip install -r requirements.txt
 $ python main.py data/test_16k.wav
-```
-
-### C++ Usage
-
-```bash
-$ cmake -S src -B build -DCMAKE_BUILD_TYPE=Release
-$ cmake --build build
-$ mkdir output
-$ ./build/diarization_main \
-    --model_path segmentation-3.0.onnx \
-    --wav_path data/test_16k.wav \
-    --output_dir output
 ```
