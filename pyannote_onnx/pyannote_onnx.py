@@ -33,6 +33,7 @@ class PyannoteONNX:
         #   5. {spk1, spk2}
         #   6. {spk1, spk3}
         #   7. {spk2, spk3}
+        self.num_classes = 7
         self.sample_rate = 16000
         self.duration = 10 * self.sample_rate
         onnx_model = f"{os.path.dirname(__file__)}/segmentation-3.0.onnx"
@@ -45,27 +46,48 @@ class PyannoteONNX:
         num_samples = len(waveform)
         while start <= num_samples - window_size:
             windows.append((start, start + window_size))
-            yield waveform[start : start + window_size]
+            yield window_size, waveform[start : start + window_size]
             start += step_size
         # last incomplete window
         if num_samples < window_size or (num_samples - window_size) % step_size > 0:
             last_window = waveform[start:]
-            if len(last_window) < window_size:
-                last_window = np.pad(last_window, (0, window_size - len(last_window)))
-            yield last_window
+            last_window_size = len(last_window)
+            if last_window_size < window_size:
+                last_window = np.pad(last_window, (0, window_size - last_window_size))
+            yield last_window_size, last_window
 
-    @staticmethod
-    def aggregate():
-        # average
-        pass
-
-    def __call__(self, x, step=2.5, return_chunk=False):
+    def __call__(self, x, step=5.0, return_chunk=False):
+        # Conv1d & MaxPool1d & SincNet:
+        #   * https://pytorch.org/docs/stable/generated/torch.nn.Conv1d.html
+        #   * https://pytorch.org/docs/stable/generated/torch.nn.MaxPool1d.html
+        #   * https://github.com/pyannote/pyannote-audio/blob/develop/pyannote/audio/models/blocks/sincnet.py#L50-L71
+        #            kernel_size  stride
+        # Conv1d             251      10
+        # MaxPool1d            3       3
+        # Conv1d               5       1
+        # MaxPool1d            3       3
+        # Conv1d               5       1
+        # MaxPool1d            3       3
+        # (L_{in} - 721) / 270 = L_{out}
         step = int(step * self.sample_rate)
-        for chunk in self.sliding_window(x, self.duration, step):
-            ort_outs = self.session.run(None, {"input": chunk[None, None, :]})[0][0]
-            ort_outs[np.isnan(ort_outs)] = 0
+        # overlap: [0.5 * duration, 0.9 * duration]
+        step = max(min(step, 0.9 * self.duration // 10), self.duration // 2)
+        overlap = (self.duration - step - 721) // 270
+        overlap_chunk = np.zeros((overlap, self.num_classes))
+        windows = list(self.sliding_window(x, self.duration, step))
+        for idx, (window_size, window) in enumerate(windows):
+            ort_outs = self.session.run(None, {"input": window[None, None, :]})[0][0]
             ort_outs = np.exp(ort_outs)
-            # TODO: aggregate and crop with loose
+            # aggregate
+            if idx != 0:
+                ort_outs[:overlap, :] = (ort_outs[:overlap, :] + overlap_chunk) / 2
+            if idx != len(windows) - 1:
+                overlap_chunk = ort_outs[-overlap:, :]
+                ort_outs = ort_outs[:-overlap, :]
+            else:
+                # crop
+                ort_outs = ort_outs[:(window_size - 721) // 270, :]
+
             if return_chunk:
                 yield ort_outs
             else:
@@ -137,18 +159,6 @@ class PyannoteONNX:
         if sr / len(wav) > 31.25:
             raise ValueError("Input audio is too short.")
 
-        # Conv1d & MaxPool1d & SincNet:
-        #   * https://pytorch.org/docs/stable/generated/torch.nn.Conv1d.html
-        #   * https://pytorch.org/docs/stable/generated/torch.nn.MaxPool1d.html
-        #   * https://github.com/pyannote/pyannote-audio/blob/develop/pyannote/audio/models/blocks/sincnet.py#L50-L71
-        #            kernel_size  stride
-        # Conv1d             251      10
-        # MaxPool1d            3       3
-        # Conv1d               5       1
-        # MaxPool1d            3       3
-        # Conv1d               5       1
-        # MaxPool1d            3       3
-        # (L_{in} - 721) / 270 = L_{out}
         window_size_samples = 270
         min_speech_samples = sr * min_speech_duration_ms / 1000
         speech_pad_samples = sr * speech_pad_ms / 1000
