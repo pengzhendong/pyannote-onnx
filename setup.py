@@ -36,7 +36,7 @@ setup(
     install_requires=requirements,
     entry_points={
         "console_scripts": [
-            "diarization = main:main",
+            "diarize = pyannote_onnx.cli:main",
         ]
     },
     classifiers=[

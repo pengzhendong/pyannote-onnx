@@ -21,7 +21,6 @@ from typing import Union
 import librosa
 import numpy as np
 import soundfile as sf
-from numpy.linalg import norm
 
 from .inference_session import PickableInferenceSession
 
@@ -94,8 +93,9 @@ class PyannoteONNX:
 
     def __call__(self, x, step=5.0, return_chunk=False):
         step = int(step * self.sample_rate)
-        # overlap: [0.5 * duration, 0.9 * duration]
+        # step: [0.5 * duration, 0.9 * duration]
         step = max(min(step, 0.9 * self.duration // 10), self.duration // 2)
+        # overlap: [0.1 * duration, 0.5 * duration]
         overlap = self.sample2frame(self.duration - step)
         overlap_chunk = np.zeros((overlap, self.num_classes))
         windows = list(self.sliding_window(x, self.duration, step))
@@ -211,11 +211,12 @@ class PyannoteONNX:
         wav, sr = librosa.load(wav_path, sr=self.sample_rate)
         speech_pad_samples = sr * speech_pad_ms // 1000
 
-        original_wav = wav
-        sample_rate = librosa.get_samplerate(wav_path)
-        if sample_rate != self.sample_rate:
+        sample_rate = sf.info(wav_path).samplerate
+        if sample_rate == self.sample_rate:
+            original_wav = wav
+        else:
             # load the wav with original sample rate for saving
-            original_wav, _ = librosa.load(wav_path, sr=sample_rate)
+            original_wav, _ = sf.read(wav_path)
         fn = partial(
             self.process_segment,
             wav=original_wav,
