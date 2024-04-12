@@ -13,6 +13,8 @@
 # limitations under the License.
 
 import click
+import matplotlib.pyplot as plt
+import soundfile as sf
 
 from pyannote_onnx import PyannoteONNX
 
@@ -21,6 +23,7 @@ from pyannote_onnx import PyannoteONNX
 @click.argument("wav_path", type=click.Path(exists=True, file_okay=True))
 def main(wav_path: str):
     vad = PyannoteONNX()
+
     segements = vad.get_speech_timestamps(
         wav_path,
         min_silence_duration_ms=100,
@@ -33,6 +36,19 @@ def main(wav_path: str):
         wav_path, threshold=0.5, min_speech_duration_ms=100
     )
     print(num_speakers)
+
+    import numpy as np
+    wav, sr = sf.read(wav_path, dtype='float32')
+    x1 = np.arange(0, len(wav)) / sr
+
+    outputs = [output for output in vad(wav)]
+    x2 = [(i * 270 + 721) / sr for i in range(0, len(outputs))]
+
+    _, axs = plt.subplots(2)
+    axs[0].plot(x1, wav)
+    axs[1].plot(x2, outputs)
+    axs[1].set_xlabel("time (s)")
+    plt.show()
 
 
 if __name__ == "__main__":

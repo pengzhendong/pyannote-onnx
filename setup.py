@@ -24,7 +24,7 @@ with open("requirements.txt", encoding="utf-8") as f:
 
 setup(
     name="pyannote-onnx",
-    version=os.getenv("BUILD_VERSION") or "0.0.2",
+    version=os.getenv("BUILD_VERSION") or "0.0.3",
     author="Zhendong Peng",
     author_email="pzd17@tsinghua.org.cn",
     long_description=long_description,
