@@ -1,2 +1,3 @@
 include requirements.txt
+include VERSION
 recursive-include pyannote_onnx *.onnx
