@@ -13,9 +13,9 @@
 # limitations under the License.
 
 import click
+import librosa
 import matplotlib.pyplot as plt
 import numpy as np
-import soundfile as sf
 
 from pyannote_onnx import PyannoteONNX
 
@@ -40,7 +40,7 @@ def main(wav_path: str, plot: bool):
     print(num_speakers)
 
     if plot:
-        wav, sr = sf.read(wav_path, dtype="float32")
+        wav, sr = librosa.load(wav_path, sr=vad.sample_rate)
         x1 = np.arange(0, len(wav)) / sr
         outputs = [output for output in vad(wav)]
         x2 = [(i * 270 + 721) / sr for i in range(0, len(outputs))]

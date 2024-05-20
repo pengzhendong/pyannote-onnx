@@ -21,6 +21,7 @@ from typing import Union
 import librosa
 import numpy as np
 import soundfile as sf
+from tqdm import tqdm
 
 from .inference_session import PickableInferenceSession
 
@@ -99,7 +100,14 @@ class PyannoteONNX:
         overlap = self.sample2frame(self.duration - step)
         overlap_chunk = np.zeros((overlap, self.num_classes))
         windows = list(self.sliding_window(x, self.duration, step))
+        progress_bar = tqdm(
+            total=len(windows),
+            desc="Pyannote processing",
+            unit="frames",
+            bar_format="{l_bar}{bar}{r_bar} | {percentage:.2f}%",
+        )
         for idx, (window_size, window) in enumerate(windows):
+            progress_bar.update(1)
             ort_outs = np.exp(
                 self.session.run(None, {"input": window[None, None, :]})[0][0]
             )
@@ -227,12 +235,13 @@ class PyannoteONNX:
             return_seconds=return_seconds,
         )
 
+        dur_ms = len(wav) * 1000 / sr
         if len(wav.shape) > 1:
             raise ValueError(
                 "More than one dimension in audio."
                 "Are you trying to process audio with 2 channels?"
             )
-        if sr / len(wav) > 31.25:
+        if dur_ms < 32:
             raise ValueError("Input audio is too short.")
 
         min_speech_samples = sr * min_speech_duration_ms // 1000
