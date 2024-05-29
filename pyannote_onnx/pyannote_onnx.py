@@ -95,7 +95,7 @@ class PyannoteONNX:
     def __call__(self, x, step=5.0, return_chunk=False):
         step = int(step * self.sample_rate)
         # step: [0.5 * duration, 0.9 * duration]
-        step = max(min(step, 0.9 * self.duration // 10), self.duration // 2)
+        step = max(min(step, 0.9 * self.duration), self.duration // 2)
         # overlap: [0.1 * duration, 0.5 * duration]
         overlap = self.sample2frame(self.duration - step)
         overlap_chunk = np.zeros((overlap, self.num_classes))
@@ -159,9 +159,9 @@ class PyannoteONNX:
         if save_path:
             wav = wav[segment["start"] : segment["end"]]
             if flat_layout:
-                sf.write(str(save_path) + f"_{idx:04d}.wav", wav, sample_rate)
+                sf.write(str(save_path) + f"_{idx:05d}.wav", wav, sample_rate)
             else:
-                sf.write(str(Path(save_path) / f"{idx:04d}.wav"), wav, sample_rate)
+                sf.write(str(Path(save_path) / f"{idx:05d}.wav"), wav, sample_rate)
         if return_seconds:
             segment["start"] = round(segment["start"] / sample_rate, 3)
             segment["end"] = round(segment["end"] / sample_rate, 3)
