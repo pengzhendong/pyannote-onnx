@@ -334,14 +334,18 @@ class PyannoteONNX:
 
     def get_num_speakers(
         self,
-        wav_path: Union[str, Path],
+        wav: Union[str, Path, np.ndarray],
         threshold: float = 0.5,
         min_speech_duration_ms: float = 100,
     ):
         """
         Get the max number of speakers
         """
-        wav, sr = librosa.load(wav_path, sr=self.sample_rate)
+        if isinstance(wav, np.ndarray):
+            sr = self.sample_rate
+        else:
+            wav, sr = librosa.load(wav, sr=self.sample_rate)
+
         if len(wav.shape) > 1:
             raise ValueError(
                 "More than one dimension in audio."
