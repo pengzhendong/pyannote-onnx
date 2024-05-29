@@ -40,7 +40,7 @@ def main(wav_path: str, plot: bool):
     print(num_speakers)
 
     if plot:
-        wav, sr = librosa.load(wav_path, sr=vad.sample_rate)
+        wav, sr = librosa.load(wav_path, sr=vad.vad_sr)
         x1 = np.arange(0, len(wav)) / sr
         outputs = [output for output in vad(wav)]
         x2 = [(i * 270 + 721) / sr for i in range(0, len(outputs))]
