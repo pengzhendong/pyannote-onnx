@@ -335,7 +335,8 @@ class PyannoteONNX:
         """
         Get the max number of speakers
         """
-        wav, _ = librosa.load(wav, sr=self.vad_sr)
+        if not isinstance(wav, np.ndarray):
+            wav, _ = librosa.load(wav, sr=self.vad_sr)
 
         if len(wav.shape) > 1:
             raise ValueError(
@@ -349,4 +350,4 @@ class PyannoteONNX:
         speech_frames = np.sum(outputs > threshold, axis=0)
         speech_duration_ms = self.frame2sample(speech_frames) * 1000 / self.vad_sr
         num_speakers = np.sum(speech_duration_ms > min_speech_duration_ms)
-        return num_speakers
+        return int(num_speakers)
