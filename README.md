@@ -16,6 +16,6 @@
 $ pip install torch onnx https://github.com/pyannote/pyannote-audio/archive/refs/heads/develop.zip
 $ python export_onnx.py pytorch_model.bin segmentation-3.0.onnx
 
-$ pip install -r requirements.txt
-$ python main.py data/test_16k.wav
+$ pip install pyannote-onnx
+$ diarize data/test_16k.wav --plot
 ```

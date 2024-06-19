@@ -42,7 +42,7 @@ def main(wav_path: str, plot: bool):
     if plot:
         wav, sr = librosa.load(wav_path, sr=vad.vad_sr)
         x1 = np.arange(0, len(wav)) / sr
-        outputs = [output for output in vad(wav)]
+        outputs = [output[1:] for output in vad(wav)]
         x2 = [(i * 270 + 721) / sr for i in range(0, len(outputs))]
 
         plt.plot(x1, wav)
