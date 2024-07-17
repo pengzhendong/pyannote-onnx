@@ -24,27 +24,16 @@ from pyannote_onnx import PyannoteONNX
 @click.argument("wav_path", type=click.Path(exists=True, file_okay=True))
 @click.option("--plot/--no-plot", default=False, help="Plot the vad probabilities")
 def main(wav_path: str, plot: bool):
-    vad = PyannoteONNX()
-
-    segements = vad.get_speech_timestamps(
-        wav_path,
-        min_silence_duration_ms=100,
-        speech_pad_ms=30,
-        return_seconds=True,
-    )
-    print(list(segements))
-
-    num_speakers = vad.get_num_speakers(
-        wav_path, threshold=0.5, min_speech_duration_ms=100
-    )
-    print(num_speakers)
+    pyannote = PyannoteONNX()
+    for turn in pyannote.itertracks(wav_path):
+        print(turn)
 
     if plot:
-        wav, sr = librosa.load(wav_path, sr=vad.vad_sr)
+        pyannote = PyannoteONNX(show_progress=True)
+        wav, sr = librosa.load(wav_path, sr=pyannote.sample_rate)
+        outputs = list(pyannote(wav))
         x1 = np.arange(0, len(wav)) / sr
-        outputs = [output[1:] for output in vad(wav)]
         x2 = [(i * 270 + 721) / sr for i in range(0, len(outputs))]
-
         plt.plot(x1, wav)
         plt.plot(x2, outputs)
         plt.show()

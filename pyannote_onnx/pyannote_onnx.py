@@ -13,21 +13,19 @@
 # limitations under the License.
 
 import os
-from functools import partial
 from itertools import permutations
 from pathlib import Path
 from typing import Union
 
 import librosa
 import numpy as np
-import soundfile as sf
 from tqdm import tqdm
 
 from .inference_session import PickableInferenceSession
 
 
 class PyannoteONNX:
-    def __init__(self):
+    def __init__(self, show_progress: bool = False):
         # segmentation-3.0 classes:
         #   1. {no speech}
         #   2. {spk1}
@@ -36,14 +34,14 @@ class PyannoteONNX:
         #   5. {spk1, spk2}
         #   6. {spk1, spk3}
         #   7. {spk2, spk3}
-        # only keep the first 4 classes
-        #   1. {speech}
-        #   2. {spk1}
-        #   3. {spk2}
-        #   4. {spk3}
-        self.num_classes = 4
-        self.vad_sr = 16000
-        self.duration = 10 * self.vad_sr
+        # only keep the speaker classes
+        #   1. {spk1}
+        #   2. {spk2}
+        #   3. {spk3}
+        self.num_classes = 3
+        self.sample_rate = 16000
+        self.duration = 10 * self.sample_rate
+        self.show_progress = show_progress
         onnx_model = f"{os.path.dirname(__file__)}/segmentation-3.0.onnx"
         self.session = PickableInferenceSession(onnx_model)
 
@@ -93,36 +91,28 @@ class PyannoteONNX:
         return perms[np.argmin(diffs)]
 
     def __call__(self, x, step=5.0, return_chunk=False):
-        step = int(step * self.vad_sr)
+        step = int(step * self.sample_rate)
         # step: [0.5 * duration, 0.9 * duration]
         step = max(min(step, 0.9 * self.duration), self.duration // 2)
         # overlap: [0.1 * duration, 0.5 * duration]
         overlap = self.sample2frame(self.duration - step)
         overlap_chunk = np.zeros((overlap, self.num_classes))
         windows = list(self.sliding_window(x, self.duration, step))
-        progress_bar = tqdm(
-            total=len(windows),
-            desc="Pyannote processing",
-            unit="frames",
-            bar_format="{l_bar}{bar}{r_bar} | {percentage:.2f}%",
-        )
-        for idx, (window_size, window) in enumerate(windows):
-            progress_bar.update(1)
-            ort_outs = np.exp(
-                self.session.run(None, {"input": window[None, None, :]})[0][0]
+        if self.show_progress:
+            progress_bar = tqdm(
+                total=len(windows),
+                desc="Pyannote processing",
+                unit="frames",
+                bar_format="{l_bar}{bar}{r_bar} | {percentage:.2f}%",
             )
+        for idx, (window_size, window) in enumerate(windows):
+            if self.show_progress:
+                progress_bar.update(1)
+            ort_outs = self.session.run(None, {"input": window[None, None, :]})[0][0]
+            ort_outs = np.exp(ort_outs[:, 1 : self.num_classes + 1])
             # https://herve.niderb.fr/fastpages/2022/10/23/One-speaker-segmentation-model-to-rule-them-all
             # reorder the speakers and aggregate
-            ort_outs = np.concatenate(
-                (
-                    1 - ort_outs[:, :1],  # speech probabilities
-                    self.reorder(
-                        overlap_chunk[:, 1 : self.num_classes],
-                        ort_outs[:, 1 : self.num_classes],
-                    ),  # speaker probabilities
-                ),
-                axis=1,
-            )
+            ort_outs = self.reorder(overlap_chunk, ort_outs)
             if idx != 0:
                 ort_outs[:overlap, :] = (ort_outs[:overlap, :] + overlap_chunk) / 2
             if idx != len(windows) - 1:
@@ -138,216 +128,32 @@ class PyannoteONNX:
                 for out in ort_outs:
                     yield out
 
-    def process_segment(
-        self,
-        idx,
-        segment,
-        wav,
-        sample_rate,
-        save_path,
-        flat_layout,
-        speech_pad_samples,
-        return_seconds,
-    ):
-        segment["start"] = max(int(segment["start"]) - speech_pad_samples, 0)
-        segment["end"] = min(int(segment["end"]) + speech_pad_samples, len(wav))
-        if save_path is not None:
-            wav = wav[segment["start"] : segment["end"]]
-            if flat_layout:
-                sf.write(str(save_path) + f"_{idx:05d}.wav", wav, sample_rate)
-            else:
-                sf.write(str(Path(save_path) / f"{idx:05d}.wav"), wav, sample_rate)
-        if return_seconds:
-            segment["start"] = round(segment["start"] / sample_rate, 3)
-            segment["end"] = round(segment["end"] / sample_rate, 3)
-        return segment
-
-    def get_speech_timestamps(
-        self,
-        wav_path: Union[str, Path],
-        save_path: Union[str, Path] = None,
-        flat_layout: bool = True,
-        threshold: float = 0.5,
-        min_speech_duration_ms: int = 250,
-        max_speech_duration_s: float = float("inf"),
-        min_silence_duration_ms: int = 200,
-        speech_pad_ms: int = 100,
-        return_seconds: bool = False,
-    ):
-        """
-        Splitting long audios into speech chunks using Pyannote ONNX
-
-        Parameters
-        ----------
-        wav_path: wav path
-        save_path: string or Path (default - None)
-            whether the save speech segments
-        flat_layout: bool (default - True)
-            whether use the flat directory structure
-        threshold: float (default - 0.5)
-            Speech threshold. Pyannote audio outputs speech probabilities for each audio
-            chunk, probabilities ABOVE this value are considered as SPEECH. It is
-            better to tune this parameter for each dataset separately, but "lazy"
-            0.5 is pretty good for most datasets.
-        min_speech_duration_ms: int (default - 250 milliseconds)
-            Final speech chunks shorter min_speech_duration_ms are thrown out
-        max_speech_duration_s: int (default - inf)
-            Maximum duration of speech chunks in seconds
-            Chunks longer than max_speech_duration_s will be split at the timestamp
-            of the last silence that lasts more than 98ms (if any), to prevent
-            agressive cutting. Otherwise, they will be split aggressively just
-            before max_speech_duration_s.
-        min_silence_duration_ms: int (default - 200 milliseconds)
-            In the end of each speech chunk wait for min_silence_duration_ms before
-            separating it.
-        speech_pad_ms: int (default - 100 milliseconds)
-            Final speech chunks are padded by speech_pad_ms each side
-        return_seconds: bool (default - False)
-            whether return timestamps in seconds (default - samples)
-
-        Returns
-        ----------
-        speeches: list of dicts
-            list containing ends and beginnings of speech chunks (samples or seconds
-            based on return_seconds)
-        """
-        sr = sf.info(wav_path).samplerate
-        speech_pad_samples = sr * speech_pad_ms // 1000
-        min_speech_samples = sr * min_speech_duration_ms // 1000
-        max_speech_samples = sr * max_speech_duration_s - 2 * speech_pad_samples
-        min_silence_samples = sr * min_silence_duration_ms // 1000
-        min_silence_samples_at_max_speech = sr * 98 // 1000
-
-        wav, _ = librosa.load(wav_path, sr=self.vad_sr)
-        if sr == self.vad_sr:
-            original_wav = wav
-        else:
-            # load the wav with original sample rate for saving
-            original_wav, _ = sf.read(wav_path)
-        fn = partial(
-            self.process_segment,
-            wav=original_wav,
-            sample_rate=sr,
-            save_path=save_path,
-            flat_layout=flat_layout,
-            speech_pad_samples=speech_pad_samples,
-            return_seconds=return_seconds,
-        )
-
-        dur_ms = len(wav) * 1000 / self.vad_sr
-        if len(wav.shape) > 1:
-            raise ValueError(
-                "More than one dimension in audio."
-                "Are you trying to process audio with 2 channels?"
-            )
-        if dur_ms < 32:
-            raise ValueError("Input audio is too short.")
-
-        current_speech = {}
-        neg_threshold = threshold - 0.15
-        triggered = False
-        # to save potential segment end (and tolerate some silence)
-        temp_end = 0
-        # to save potential segment limits in case of maximum segment size reached
-        prev_end = 0
-        next_start = 0
-
-        idx = 0
-        current_samples = 721 * sr / self.vad_sr
-        for outupt in self(wav):
-            speech_prob = outupt[0]
-            current_samples += 270 * sr / self.vad_sr
-            # current frame is speech
-            if speech_prob >= threshold:
-                if temp_end > 0 and next_start < prev_end:
-                    next_start = current_samples
-                temp_end = 0
-                if not triggered:
-                    triggered = True
-                    current_speech["start"] = current_samples
-                    continue
-            # in speech, and speech duration is more than max speech duration
-            if (
-                triggered
-                and current_samples - current_speech["start"] > max_speech_samples
-            ):
-                # prev_end larger than 0 means there is a short silence in the middle avoid aggressive cutting
-                if prev_end > 0:
-                    current_speech["end"] = prev_end
-                    yield fn(idx, current_speech)
-                    idx += 1
-                    current_speech = {}
-                    # previously reached silence (< neg_thres) and is still not speech (< thres)
-                    if next_start < prev_end:
-                        triggered = False
-                    else:
-                        current_speech["start"] = next_start
-                    prev_end = 0
-                    next_start = 0
-                    temp_end = 0
-                else:
-                    current_speech["end"] = current_samples
-                    yield fn(idx, current_speech)
-                    idx += 1
-                    current_speech = {}
-                    prev_end = 0
-                    next_start = 0
-                    temp_end = 0
-                    triggered = False
-                    continue
-            # in speech, and current frame is silence
-            if triggered and speech_prob < neg_threshold:
-                if temp_end == 0:
-                    temp_end = current_samples
-                # record the last silence before reaching max speech duration
-                if current_samples - temp_end > min_silence_samples_at_max_speech:
-                    prev_end = temp_end
-                if current_samples - temp_end >= min_silence_samples:
-                    current_speech["end"] = temp_end
-                    # keep the speech segment if it is longer than min_speech_samples
-                    if (
-                        current_speech["end"] - current_speech["start"]
-                        > min_speech_samples
-                    ):
-                        yield fn(idx, current_speech)
-                        idx += 1
-                    current_speech = {}
-                    prev_end = 0
-                    next_start = 0
-                    temp_end = 0
-                    triggered = False
-
-        num_samples = len(original_wav)
-        # deal with the last speech segment
-        if (
-            current_speech
-            and num_samples - current_speech["start"] > min_speech_samples
-        ):
-            current_speech["end"] = num_samples
-            yield fn(idx, current_speech)
-
-    def get_num_speakers(
-        self,
-        wav: Union[str, Path, np.ndarray],
-        threshold: float = 0.5,
-        min_speech_duration_ms: float = 100,
-    ):
-        """
-        Get the max number of speakers
-        """
+    def itertracks(self, wav, onset: float = 0.5, offset: float = 0.5):
         if not isinstance(wav, np.ndarray):
-            wav, _ = librosa.load(wav, sr=self.vad_sr)
+            wav, _ = librosa.load(wav, sr=self.sample_rate, mono=True)
 
-        if len(wav.shape) > 1:
-            raise ValueError(
-                "More than one dimension in audio."
-                "Are you trying to process audio with 2 channels?"
-            )
-        if self.vad_sr / len(wav) > 31.25:
-            raise ValueError("Input audio is too short.")
-
-        outputs = np.array(list(self(wav)))[:, 1 : self.num_classes]
-        speech_frames = np.sum(outputs > threshold, axis=0)
-        speech_duration_ms = self.frame2sample(speech_frames) * 1000 / self.vad_sr
-        num_speakers = np.sum(speech_duration_ms > min_speech_duration_ms)
-        return int(num_speakers)
+        current_samples = 721
+        start = [0] * self.num_classes
+        is_active = [False] * self.num_classes
+        for speech_probs in self(wav):
+            current_samples += 270
+            for idx, prob in enumerate(speech_probs):
+                if is_active[idx]:
+                    if prob < offset:
+                        yield {
+                            "speaker": idx,
+                            "start": round(start[idx] / self.sample_rate, 3),
+                            "stop": round(current_samples / self.sample_rate, 3),
+                        }
+                        is_active[idx] = False
+                else:
+                    if prob > onset:
+                        start[idx] = current_samples
+                        is_active[idx] = True
+        for idx in range(self.num_classes):
+            if is_active[idx]:
+                yield {
+                    "speaker": idx,
+                    "start": round(start[idx] / self.sample_rate, 3),
+                    "stop": round(current_samples / self.sample_rate, 3),
+                }
