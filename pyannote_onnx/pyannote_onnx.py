@@ -12,37 +12,50 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import os
 from itertools import permutations
-from pathlib import Path
-from typing import Union
 
 import librosa
 import numpy as np
+from modelscope.hub.file_download import model_file_download
 from tqdm import tqdm
 
 from .inference_session import PickableInferenceSession
 
 
 class PyannoteONNX:
-    def __init__(self, show_progress: bool = False):
-        # segmentation-3.0 classes:
-        #   1. {no speech}
-        #   2. {spk1}
-        #   3. {spk2}
-        #   4. {spk3}
-        #   5. {spk1, spk2}
-        #   6. {spk1, spk3}
-        #   7. {spk2, spk3}
-        # only keep the speaker classes
-        #   1. {spk1}
-        #   2. {spk2}
-        #   3. {spk3}
-        self.num_classes = 3
+    def __init__(
+        self, model_name: str = "segmentation-3.0", show_progress: bool = False
+    ):
+        configs = {
+            "segmentation": {
+                "duration": 5,
+                # {spk1}, {spk2}, {spk3}
+                "num_speakers": 3,
+            },
+            "segmentation-3.0": {
+                "duration": 10,
+                # {no speech}, {spk1}, {spk2}, {spk3}, {spk1, spk2}, {spk1, spk3}, {spk2, spk3}
+                "num_speakers": 3,
+            },
+            "segmentation_bigdata": {
+                "duration": 5,
+                # {spk1}, {spk2}, {spk3}, {spk4}
+                "num_speakers": 4,
+            },
+            "short_scd_bigdata": {
+                # {speaker change}
+                "duration": 5,
+                "num_speakers": 1,
+            },
+        }
         self.sample_rate = 16000
-        self.duration = 10 * self.sample_rate
+        self.model_name = model_name
         self.show_progress = show_progress
-        onnx_model = f"{os.path.dirname(__file__)}/segmentation-3.0.onnx"
+        self.num_speakers = configs[model_name]["num_speakers"]
+        self.duration = configs[model_name]["duration"] * self.sample_rate
+        onnx_model = model_file_download(
+            "pengzhendong/pyannote-audio", f"{model_name}.onnx"
+        )
         self.session = PickableInferenceSession(onnx_model)
 
     @staticmethod
@@ -90,13 +103,13 @@ class PyannoteONNX:
         )
         return perms[np.argmin(diffs)]
 
-    def __call__(self, x, step=5.0, return_chunk=False):
-        step = int(step * self.sample_rate)
-        # step: [0.5 * duration, 0.9 * duration]
-        step = max(min(step, 0.9 * self.duration), self.duration // 2)
-        # overlap: [0.1 * duration, 0.5 * duration]
-        overlap = self.sample2frame(self.duration - step)
-        overlap_chunk = np.zeros((overlap, self.num_classes))
+    def __call__(self, x, step=None, return_chunk=False):
+        if step is None:
+            step = self.duration // 2
+        else:
+            # step: [0.5 * duration, 0.9 * duration]
+            step = int(step * self.sample_rate)
+            step = max(min(step, 0.9 * self.duration), self.duration // 2)
         windows = list(self.sliding_window(x, self.duration, step))
         if self.show_progress:
             progress_bar = tqdm(
@@ -105,11 +118,21 @@ class PyannoteONNX:
                 unit="frames",
                 bar_format="{l_bar}{bar}{r_bar} | {percentage:.2f}%",
             )
+
+        # overlap: [0.1 * duration, 0.5 * duration]
+        overlap = self.sample2frame(self.duration - step)
+        overlap_chunk = np.zeros((overlap, self.num_speakers))
         for idx, (window_size, window) in enumerate(windows):
             if self.show_progress:
                 progress_bar.update(1)
             ort_outs = self.session.run(None, {"input": window[None, None, :]})[0][0]
-            ort_outs = np.exp(ort_outs[:, 1 : self.num_classes + 1])
+            if self.model_name == "segmentation-3.0":
+                ort_outs = np.exp(ort_outs)
+                ort_outs[:, 1] += ort_outs[:, 4] + ort_outs[:, 5]
+                ort_outs[:, 2] += ort_outs[:, 4] + ort_outs[:, 6]
+                ort_outs[:, 3] += ort_outs[:, 5] + ort_outs[:, 6]
+                ort_outs = ort_outs[:, 1:4]
+
             # https://herve.niderb.fr/fastpages/2022/10/23/One-speaker-segmentation-model-to-rule-them-all
             # reorder the speakers and aggregate
             ort_outs = self.reorder(overlap_chunk, ort_outs)
@@ -133,27 +156,36 @@ class PyannoteONNX:
             wav, _ = librosa.load(wav, sr=self.sample_rate, mono=True)
 
         current_samples = 721
-        start = [0] * self.num_classes
-        is_active = [False] * self.num_classes
-        for speech_probs in self(wav):
-            current_samples += 270
-            for idx, prob in enumerate(speech_probs):
+        is_active = [False] * self.num_speakers
+        if self.model_name == "short_scd_bigdata":
+            for speaker_change_prob in self(wav):
+                current_samples += 270
+                if speaker_change_prob > onset and is_active[0] is False:
+                    is_active[0] = True
+                    yield round(current_samples / self.sample_rate, 3)
+                if speaker_change_prob < offset:
+                    is_active[0] = False
+        else:
+            start = [0] * self.num_speakers
+            for speech_probs in self(wav):
+                current_samples += 270
+                for idx, prob in enumerate(speech_probs):
+                    if is_active[idx]:
+                        if prob < offset:
+                            yield {
+                                "speaker": idx,
+                                "start": round(start[idx] / self.sample_rate, 3),
+                                "stop": round(current_samples / self.sample_rate, 3),
+                            }
+                            is_active[idx] = False
+                    else:
+                        if prob > onset:
+                            start[idx] = current_samples
+                            is_active[idx] = True
+            for idx in range(self.num_speakers):
                 if is_active[idx]:
-                    if prob < offset:
-                        yield {
-                            "speaker": idx,
-                            "start": round(start[idx] / self.sample_rate, 3),
-                            "stop": round(current_samples / self.sample_rate, 3),
-                        }
-                        is_active[idx] = False
-                else:
-                    if prob > onset:
-                        start[idx] = current_samples
-                        is_active[idx] = True
-        for idx in range(self.num_classes):
-            if is_active[idx]:
-                yield {
-                    "speaker": idx,
-                    "start": round(start[idx] / self.sample_rate, 3),
-                    "stop": round(current_samples / self.sample_rate, 3),
-                }
+                    yield {
+                        "speaker": idx,
+                        "start": round(start[idx] / self.sample_rate, 3),
+                        "stop": round(current_samples / self.sample_rate, 3),
+                    }
