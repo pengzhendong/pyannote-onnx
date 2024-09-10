@@ -109,7 +109,7 @@ class PyannoteONNX:
         else:
             # step: [0.5 * duration, 0.9 * duration]
             step = int(step * self.sample_rate)
-            step = max(min(step, 0.9 * self.duration), self.duration // 2)
+        step = max(min(step, 0.9 * self.duration), self.duration // 2)
         windows = list(self.sliding_window(x, self.duration, step))
         if self.show_progress:
             progress_bar = tqdm(
