@@ -12,4 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from .pyannote_onnx import *
+from .pyannote_onnx import PyannoteONNX
+
+__all__ = ["PyannoteONNX"]

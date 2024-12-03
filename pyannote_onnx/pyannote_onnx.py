@@ -23,9 +23,7 @@ from .inference_session import PickableInferenceSession
 
 
 class PyannoteONNX:
-    def __init__(
-        self, model_name: str = "segmentation-3.0", show_progress: bool = False
-    ):
+    def __init__(self, model_name: str = "segmentation-3.0", show_progress: bool = False):
         configs = {
             "segmentation": {
                 "duration": 5,
@@ -53,9 +51,7 @@ class PyannoteONNX:
         self.show_progress = show_progress
         self.num_speakers = configs[model_name]["num_speakers"]
         self.duration = configs[model_name]["duration"] * self.sample_rate
-        onnx_model = model_file_download(
-            "pengzhendong/pyannote-audio", f"{model_name}.onnx"
-        )
+        onnx_model = model_file_download("pengzhendong/pyannote-audio", f"{model_name}.onnx")
         self.session = PickableInferenceSession(onnx_model)
 
     @staticmethod
@@ -98,9 +94,7 @@ class PyannoteONNX:
     @staticmethod
     def reorder(x, y):
         perms = [np.array(perm).T for perm in permutations(y.T)]
-        diffs = np.sum(
-            np.abs(np.sum(np.array(perms)[:, : x.shape[0], :] - x, axis=1)), axis=1
-        )
+        diffs = np.sum(np.abs(np.sum(np.array(perms)[:, : x.shape[0], :] - x, axis=1)), axis=1)
         return perms[np.argmin(diffs)]
 
     def __call__(self, x, step=None, return_chunk=False):
